@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --ink:#1C2B22;
@@ -362,9 +363,9 @@
 
 <script>
 (function(){
-  const KEY_TX = 'transaksi-kas';
-  const KEY_SETTINGS = 'pengaturan-laporan';
-  const KEY_BUDGET = 'anggaran-kategori';
+  const SUPABASE_URL = 'https://ucnquzslbarvhctzzokx.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_TgBUYE7UWYJgnL4g4ibUQg_t4dxGMSh';
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   let transaksi = [];
   let settings = { lembaga:'', penyusun:'', target: 0 };
   let anggaran = {}; // { kategoriLower: {label, limit} }
@@ -385,19 +386,29 @@
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
   }
 
-  function loadAll(){
+  async function loadAll(){
     try{
-      const v = localStorage.getItem(KEY_TX);
-      transaksi = v ? JSON.parse(v) : [];
-    }catch(e){ transaksi = []; }
+      const { data, error } = await sb.from('transaksi').select('*').order('tanggal');
+      if(error) throw error;
+      transaksi = (data||[]).map(r => ({
+        id: r.id, tanggal: r.tanggal, jenis: r.jenis, kategori: r.kategori,
+        keterangan: r.keterangan, jumlah: Number(r.jumlah),
+        createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now()
+      }));
+    }catch(e){ transaksi = []; console.error('Gagal memuat transaksi', e); }
+
     try{
-      const v2 = localStorage.getItem(KEY_SETTINGS);
-      if(v2) settings = Object.assign({lembaga:'',penyusun:'',target:0}, JSON.parse(v2));
-    }catch(e){ /* belum ada pengaturan tersimpan */ }
+      const { data, error } = await sb.from('pengaturan').select('*').eq('id',1).maybeSingle();
+      if(error) throw error;
+      if(data) settings = { lembaga: data.lembaga||'', penyusun: data.penyusun||'', target: Number(data.target)||0 };
+    }catch(e){ console.error('Gagal memuat pengaturan', e); }
+
     try{
-      const v3 = localStorage.getItem(KEY_BUDGET);
-      anggaran = v3 ? JSON.parse(v3) : {};
-    }catch(e){ anggaran = {}; }
+      const { data, error } = await sb.from('anggaran_kategori').select('*');
+      if(error) throw error;
+      anggaran = {};
+      (data||[]).forEach(r => { anggaran[r.kategori_key] = { label: r.label, limit: Number(r.limit_bulanan) }; });
+    }catch(e){ anggaran = {}; console.error('Gagal memuat anggaran', e); }
 
     document.getElementById('inputLembaga').value = settings.lembaga || '';
     document.getElementById('inputPenyusun').value = settings.penyusun || '';
@@ -408,9 +419,33 @@
     renderAll();
   }
 
-  async function saveTx(){ try{ localStorage.setItem(KEY_TX, JSON.stringify(transaksi)); }catch(e){ console.error(e); } }
-  async function saveSettings(){ try{ localStorage.setItem(KEY_SETTINGS, JSON.stringify(settings)); }catch(e){ console.error(e); } }
-  async function saveBudget(){ try{ localStorage.setItem(KEY_BUDGET, JSON.stringify(anggaran)); }catch(e){ console.error(e); } }
+  async function insertTx(t){
+    const { error } = await sb.from('transaksi').insert({
+      id: t.id, tanggal: t.tanggal, jenis: t.jenis, kategori: t.kategori,
+      keterangan: t.keterangan, jumlah: t.jumlah
+    });
+    if(error){ console.error('Gagal menyimpan transaksi', error); alert('Gagal menyimpan ke database. Cek koneksi internet.'); }
+  }
+  async function deleteTxRemote(id){
+    const { error } = await sb.from('transaksi').delete().eq('id', id);
+    if(error){ console.error('Gagal menghapus transaksi', error); alert('Gagal menghapus dari database.'); }
+  }
+  async function saveSettings(){
+    const { error } = await sb.from('pengaturan').upsert({
+      id: 1, lembaga: settings.lembaga, penyusun: settings.penyusun, target: settings.target
+    });
+    if(error){ console.error('Gagal menyimpan pengaturan', error); alert('Gagal menyimpan pengaturan ke database.'); }
+  }
+  async function upsertBudget(key, budget){
+    const { error } = await sb.from('anggaran_kategori').upsert({
+      kategori_key: key, label: budget.label, limit_bulanan: budget.limit
+    });
+    if(error){ console.error('Gagal menyimpan anggaran', error); alert('Gagal menyimpan anggaran ke database.'); }
+  }
+  async function deleteBudgetRemote(key){
+    const { error } = await sb.from('anggaran_kategori').delete().eq('kategori_key', key);
+    if(error){ console.error('Gagal menghapus anggaran', error); alert('Gagal menghapus anggaran dari database.'); }
+  }
 
   function updateHeader(){
     document.getElementById('lembagaTitle').textContent = settings.lembaga ? settings.lembaga : 'Kendali Pengeluaran';
@@ -546,9 +581,10 @@
 
       wrap.querySelectorAll('[data-delkat]').forEach(btn => {
         btn.addEventListener('click', async () => {
-          delete anggaran[btn.dataset.delkat];
-          await saveBudget();
+          const key = btn.dataset.delkat;
+          delete anggaran[key];
           renderKategoriBudget();
+          await deleteBudgetRemote(key);
         });
       });
     }
@@ -563,12 +599,15 @@
     const limit = Number(document.getElementById('katLimit').value);
     if(!nama){ alert('Nama kategori wajib diisi.'); return; }
     if(!limit || limit <= 0){ alert('Batas anggaran harus lebih dari 0.'); return; }
-    anggaran[nama.toLowerCase()] = { label: nama, limit };
-    await saveBudget();
+    const key = nama.toLowerCase();
+    const budget = { label: nama, limit };
+    anggaran[key] = budget;
     document.getElementById('katNama').value = '';
     document.getElementById('katLimit').value = '';
     renderKategoriBudget();
+    await upsertBudget(key, budget);
   });
+
 
   // ===== Tren pengeluaran (canvas) =====
   function renderTrend(){
@@ -729,9 +768,10 @@
     tbody.querySelectorAll('[data-del]').forEach(btn => {
       btn.addEventListener('click', async () => {
         if(!confirm('Hapus transaksi ini?')) return;
-        transaksi = transaksi.filter(t => t.id !== btn.dataset.del);
-        await saveTx();
+        const id = btn.dataset.del;
+        transaksi = transaksi.filter(t => t.id !== id);
         renderAll();
+        await deleteTxRemote(id);
       });
     });
   }
@@ -761,13 +801,15 @@
     if(!jumlah || jumlah <= 0){ alert('Jumlah harus lebih dari 0.'); return; }
     if(!keterangan){ alert('Keterangan wajib diisi.'); return; }
 
-    transaksi.push({ id: uid(), tanggal, jenis: jenisAktif, kategori: kategori || 'Lainnya', keterangan, jumlah, createdAt: Date.now() });
-    await saveTx();
+    const t = { id: uid(), tanggal, jenis: jenisAktif, kategori: kategori || 'Lainnya', keterangan, jumlah, createdAt: Date.now() };
+    transaksi.push(t);
 
     document.getElementById('fKategori').value = '';
     document.getElementById('fKeterangan').value = '';
     document.getElementById('fJumlah').value = '';
     renderAll();
+
+    await insertTx(t);
   });
 
   document.getElementById('btnSimpanLembaga').addEventListener('click', async () => {
