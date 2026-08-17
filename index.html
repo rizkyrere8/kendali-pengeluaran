@@ -274,7 +274,7 @@
   </section>
 
   <section class="panel no-print">
-    <div class="panel-head"><h2>Catat Transaksi Baru</h2></div>
+    <div class="panel-head"><h2 id="formTitle">Catat Transaksi Baru</h2></div>
     <div class="panel-body">
       <div class="form-grid">
         <div class="field">
@@ -301,7 +301,10 @@
           <label>Jumlah (Rp)</label>
           <input type="number" id="fJumlah" min="0" placeholder="0">
         </div>
-        <button class="btn btn-primary" id="btnTambah">+ Tambah</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary" id="btnTambah">+ Tambah</button>
+          <button class="btn btn-ghost" id="btnBatalEdit" style="display:none;">Batal</button>
+        </div>
       </div>
     </div>
   </section>
@@ -371,6 +374,7 @@
   let anggaran = {}; // { kategoriLower: {label, limit} }
   let jenisAktif = 'masuk';
   let trendMode = 'bulanan';
+  let editingId = null;
 
   const fmtRupiah = (n) => 'Rp ' + Math.round(n||0).toLocaleString('id-ID');
   const fmtTanggal = (iso) => {
@@ -425,6 +429,13 @@
       keterangan: t.keterangan, jumlah: t.jumlah
     });
     if(error){ console.error('Gagal menyimpan transaksi', error); alert('Gagal menyimpan ke database. Cek koneksi internet.'); }
+  }
+  async function updateTxRemote(t){
+    const { error } = await sb.from('transaksi').update({
+      tanggal: t.tanggal, jenis: t.jenis, kategori: t.kategori,
+      keterangan: t.keterangan, jumlah: t.jumlah
+    }).eq('id', t.id);
+    if(error){ console.error('Gagal memperbarui transaksi', error); alert('Gagal menyimpan perubahan ke database.'); }
   }
   async function deleteTxRemote(id){
     const { error } = await sb.from('transaksi').delete().eq('id', id);
@@ -756,7 +767,7 @@
           <td class="num masuk">${t.jenis==='masuk'?fmtRupiah(jml):''}</td>
           <td class="num keluar">${t.jenis==='keluar'?fmtRupiah(jml):''}</td>
           <td class="num saldo">${fmtRupiah(saldo)}</td>
-          <td class="no-print"><div class="row-actions"><button class="icon-btn" data-del="${t.id}" title="Hapus">🗑</button></div></td>
+          <td class="no-print"><div class="row-actions"><button class="icon-btn" data-edit="${t.id}" title="Edit">✏️</button><button class="icon-btn" data-del="${t.id}" title="Hapus">🗑</button></div></td>
         `;
         tbody.appendChild(tr);
       });
@@ -774,7 +785,49 @@
         await deleteTxRemote(id);
       });
     });
+
+    tbody.querySelectorAll('[data-edit]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const t = transaksi.find(x => x.id === btn.dataset.edit);
+        if(!t) return;
+        mulaiEdit(t);
+      });
+    });
   }
+
+  function mulaiEdit(t){
+    editingId = t.id;
+    jenisAktif = t.jenis;
+    if(t.jenis === 'masuk'){
+      document.getElementById('btnJenisMasuk').classList.add('active-masuk');
+      document.getElementById('btnJenisKeluar').classList.remove('active-keluar');
+    } else {
+      document.getElementById('btnJenisKeluar').classList.add('active-keluar');
+      document.getElementById('btnJenisMasuk').classList.remove('active-masuk');
+    }
+    document.getElementById('fTanggal').value = t.tanggal;
+    document.getElementById('fKategori').value = t.kategori || '';
+    document.getElementById('fKeterangan').value = t.keterangan || '';
+    document.getElementById('fJumlah').value = t.jumlah;
+
+    document.getElementById('formTitle').textContent = 'Edit Transaksi';
+    document.getElementById('btnTambah').textContent = 'Simpan Perubahan';
+    document.getElementById('btnBatalEdit').style.display = 'inline-block';
+    document.querySelector('section.panel.no-print').scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+
+  function batalEdit(){
+    editingId = null;
+    document.getElementById('formTitle').textContent = 'Catat Transaksi Baru';
+    document.getElementById('btnTambah').textContent = '+ Tambah';
+    document.getElementById('btnBatalEdit').style.display = 'none';
+    document.getElementById('fKategori').value = '';
+    document.getElementById('fKeterangan').value = '';
+    document.getElementById('fJumlah').value = '';
+    document.getElementById('fTanggal').valueAsDate = new Date();
+  }
+
+  document.getElementById('btnBatalEdit').addEventListener('click', batalEdit);
 
   document.getElementById('bulanAktif').addEventListener('change', renderAll);
 
@@ -801,15 +854,25 @@
     if(!jumlah || jumlah <= 0){ alert('Jumlah harus lebih dari 0.'); return; }
     if(!keterangan){ alert('Keterangan wajib diisi.'); return; }
 
-    const t = { id: uid(), tanggal, jenis: jenisAktif, kategori: kategori || 'Lainnya', keterangan, jumlah, createdAt: Date.now() };
-    transaksi.push(t);
+    if(editingId){
+      const idx = transaksi.findIndex(x => x.id === editingId);
+      if(idx === -1){ batalEdit(); return; }
+      const t = Object.assign({}, transaksi[idx], { tanggal, jenis: jenisAktif, kategori: kategori || 'Lainnya', keterangan, jumlah });
+      transaksi[idx] = t;
+      renderAll();
+      await updateTxRemote(t);
+      batalEdit();
+    } else {
+      const t = { id: uid(), tanggal, jenis: jenisAktif, kategori: kategori || 'Lainnya', keterangan, jumlah, createdAt: Date.now() };
+      transaksi.push(t);
 
-    document.getElementById('fKategori').value = '';
-    document.getElementById('fKeterangan').value = '';
-    document.getElementById('fJumlah').value = '';
-    renderAll();
+      document.getElementById('fKategori').value = '';
+      document.getElementById('fKeterangan').value = '';
+      document.getElementById('fJumlah').value = '';
+      renderAll();
 
-    await insertTx(t);
+      await insertTx(t);
+    }
   });
 
   document.getElementById('btnSimpanLembaga').addEventListener('click', async () => {
