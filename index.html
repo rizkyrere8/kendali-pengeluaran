@@ -173,9 +173,45 @@
     .card,section.panel{box-shadow:none;border:1px solid var(--line);}
     .wrap{padding:0;max-width:100%;}
   }
+
+  /* Lock screen */
+  body.locked{overflow:hidden;}
+  .wrap{display:none;}
+  body.unlocked .wrap{display:block;}
+  #lockScreen{
+    position:fixed;inset:0;z-index:9999;
+    background:linear-gradient(180deg,var(--emerald) 0%,var(--emerald-dark) 100%);
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  #lockScreen.hidden{display:none;}
+  .lock-box{
+    background:var(--paper);border-radius:16px;padding:32px 28px;max-width:340px;width:100%;
+    box-shadow:0 20px 50px rgba(0,0,0,0.25);text-align:center;
+  }
+  .lock-box .lock-icon{font-size:32px;margin-bottom:10px;}
+  .lock-box h2{font-family:'Fraunces',serif;font-size:20px;margin:0 0 6px;color:var(--emerald-dark);}
+  .lock-box p{font-size:12.5px;color:#7A8577;margin:0 0 18px;}
+  .lock-box input{
+    width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px;
+    font-family:'JetBrains Mono',monospace;font-size:15px;text-align:center;letter-spacing:.1em;
+    margin-bottom:10px;
+  }
+  .lock-box input:focus{outline:2px solid var(--emerald);outline-offset:1px;}
+  .lock-box button{width:100%;padding:11px;}
+  .lock-error{color:var(--rose);font-size:12px;margin-top:10px;min-height:16px;}
 </style>
 </head>
 <body>
+<div id="lockScreen">
+  <div class="lock-box">
+    <div class="lock-icon">🔒</div>
+    <h2>Kendali Pengeluaran</h2>
+    <p>Masukkan sandi untuk membuka aplikasi</p>
+    <input type="password" id="lockInput" placeholder="Sandi" inputmode="text" autocomplete="off">
+    <button class="btn btn-primary" id="lockSubmit">Buka</button>
+    <div class="lock-error" id="lockError"></div>
+  </div>
+</div>
 <div class="wrap">
 
   <header class="hero">
@@ -934,7 +970,42 @@
     XLSX.writeFile(wb, namaFile);
   });
 
-  loadAll();
+  // ===== Gerbang sandi =====
+  const SANDI_APLIKASI = '12xx34xx56';
+  const LOCK_SESSION_KEY = 'kp_unlocked';
+
+  function bukaAplikasi(){
+    document.getElementById('lockScreen').classList.add('hidden');
+    document.body.classList.add('unlocked');
+    document.body.classList.remove('locked');
+    loadAll();
+  }
+
+  function cekSandi(){
+    const nilai = document.getElementById('lockInput').value;
+    if(nilai === SANDI_APLIKASI){
+      try{ sessionStorage.setItem(LOCK_SESSION_KEY, '1'); }catch(e){}
+      bukaAplikasi();
+    } else {
+      document.getElementById('lockError').textContent = 'Sandi salah, coba lagi.';
+      document.getElementById('lockInput').value = '';
+      document.getElementById('lockInput').focus();
+    }
+  }
+
+  document.getElementById('lockSubmit').addEventListener('click', cekSandi);
+  document.getElementById('lockInput').addEventListener('keydown', (e) => {
+    if(e.key === 'Enter') cekSandi();
+  });
+
+  let sudahDiBuka = false;
+  try{ sudahDiBuka = sessionStorage.getItem(LOCK_SESSION_KEY) === '1'; }catch(e){}
+  if(sudahDiBuka){
+    bukaAplikasi();
+  } else {
+    document.body.classList.add('locked');
+    document.getElementById('lockInput').focus();
+  }
 })();
 </script>
 </body>
