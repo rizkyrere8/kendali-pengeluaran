@@ -206,9 +206,10 @@
   <div class="lock-box">
     <div class="lock-icon">🔒</div>
     <h2>Kendali Pengeluaran</h2>
-    <p>Masukkan sandi untuk membuka aplikasi</p>
-    <input type="password" id="lockInput" placeholder="Sandi" inputmode="text" autocomplete="off">
-    <button class="btn btn-primary" id="lockSubmit">Buka</button>
+    <p>Masuk untuk membuka aplikasi</p>
+    <input type="email" id="lockEmail" placeholder="Email" autocomplete="username" style="text-align:left;letter-spacing:normal;font-family:'Inter',sans-serif;">
+    <input type="password" id="lockInput" placeholder="Password" autocomplete="current-password" style="text-align:left;letter-spacing:normal;font-family:'Inter',sans-serif;">
+    <button class="btn btn-primary" id="lockSubmit">Masuk</button>
     <div class="lock-error" id="lockError"></div>
   </div>
 </div>
@@ -970,10 +971,7 @@
     XLSX.writeFile(wb, namaFile);
   });
 
-  // ===== Gerbang sandi =====
-  const SANDI_APLIKASI = '12xx34xx56';
-  const LOCK_SESSION_KEY = 'kp_unlocked';
-
+  // ===== Gerbang login (Supabase Auth) =====
   function bukaAplikasi(){
     document.getElementById('lockScreen').classList.add('hidden');
     document.body.classList.add('unlocked');
@@ -981,31 +979,40 @@
     loadAll();
   }
 
-  function cekSandi(){
-    const nilai = document.getElementById('lockInput').value;
-    if(nilai === SANDI_APLIKASI){
-      try{ sessionStorage.setItem(LOCK_SESSION_KEY, '1'); }catch(e){}
-      bukaAplikasi();
-    } else {
-      document.getElementById('lockError').textContent = 'Sandi salah, coba lagi.';
+  async function cekLogin(){
+    const email = document.getElementById('lockEmail').value.trim();
+    const password = document.getElementById('lockInput').value;
+    const btn = document.getElementById('lockSubmit');
+    const errEl = document.getElementById('lockError');
+    errEl.textContent = '';
+    if(!email || !password){ errEl.textContent = 'Email dan password wajib diisi.'; return; }
+
+    btn.disabled = true; btn.textContent = 'Memeriksa...';
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    btn.disabled = false; btn.textContent = 'Masuk';
+
+    if(error){
+      errEl.textContent = 'Email atau password salah.';
       document.getElementById('lockInput').value = '';
-      document.getElementById('lockInput').focus();
+    } else {
+      bukaAplikasi();
     }
   }
 
-  document.getElementById('lockSubmit').addEventListener('click', cekSandi);
-  document.getElementById('lockInput').addEventListener('keydown', (e) => {
-    if(e.key === 'Enter') cekSandi();
+  document.getElementById('lockSubmit').addEventListener('click', cekLogin);
+  ['lockEmail','lockInput'].forEach(id => {
+    document.getElementById(id).addEventListener('keydown', (e) => { if(e.key === 'Enter') cekLogin(); });
   });
 
-  let sudahDiBuka = false;
-  try{ sudahDiBuka = sessionStorage.getItem(LOCK_SESSION_KEY) === '1'; }catch(e){}
-  if(sudahDiBuka){
-    bukaAplikasi();
-  } else {
-    document.body.classList.add('locked');
-    document.getElementById('lockInput').focus();
-  }
+  (async () => {
+    const { data } = await sb.auth.getSession();
+    if(data && data.session){
+      bukaAplikasi();
+    } else {
+      document.body.classList.add('locked');
+      document.getElementById('lockEmail').focus();
+    }
+  })();
 })();
 </script>
 </body>
