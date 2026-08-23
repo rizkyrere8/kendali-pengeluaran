@@ -4,6 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kendali Pengeluaran</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<meta name="theme-color" content="#145A38">
+<script>
+  (function(){
+    try{
+      var t = localStorage.getItem('app-theme');
+      if(t === 'dark') document.documentElement.setAttribute('data-theme','dark');
+    }catch(e){}
+  })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -24,6 +36,39 @@
     --amber-tint:#FBF0DC;
     --line:#DCD2B4;
     --shadow:0 8px 24px rgba(20,90,56,0.08);
+  }
+  html[data-theme="dark"]{
+    --ink:#EDE9DC;
+    --paper:#1E2823;
+    --paper-alt:#141C18;
+    --emerald:#1C6B45;
+    --emerald-dark:#0C3B24;
+    --emerald-tint:rgba(46,139,87,0.18);
+    --gold:#D9B657;
+    --gold-soft:#E9C97A;
+    --rose:#D98A7A;
+    --rose-tint:rgba(154,59,46,0.22);
+    --amber:#E0A94D;
+    --amber-tint:rgba(184,121,11,0.2);
+    --line:#33413A;
+    --shadow:0 8px 24px rgba(0,0,0,0.4);
+  }
+  html[data-theme="dark"] .card-value{color:#8FD9B3;}
+  html[data-theme="dark"] .card.out .card-value{color:#F0A99A;}
+  html[data-theme="dark"] .card.saldo .card-value{color:var(--gold-soft);}
+  html[data-theme="dark"] td.num.masuk{color:#8FD9B3;}
+  html[data-theme="dark"] td.num.keluar{color:#F0A99A;}
+  html[data-theme="dark"] .badge.masuk{color:#8FD9B3;}
+  html[data-theme="dark"] .badge.keluar{color:#F0A99A;}
+  html[data-theme="dark"] .field input,html[data-theme="dark"] .field select,
+  html[data-theme="dark"] .kat-add input,html[data-theme="dark"] .target-field input{
+    background:var(--paper-alt);color:var(--ink);
+  }
+  .theme-toggle{
+    position:fixed;top:16px;right:16px;z-index:60;
+    width:38px;height:38px;border-radius:50%;border:1px solid var(--line);
+    background:var(--paper);color:var(--ink);font-size:16px;cursor:pointer;
+    box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--paper-alt);color:var(--ink);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
@@ -199,11 +244,14 @@
   .lock-box input:focus{outline:2px solid var(--emerald);outline-offset:1px;}
   .lock-box button{width:100%;padding:11px;}
   .lock-error{color:var(--rose);font-size:12px;margin-top:10px;min-height:16px;}
+  .lock-error.ok{color:var(--emerald);}
+  .lock-forgot{background:none;border:none;color:var(--emerald);font-size:12px;cursor:pointer;margin-top:12px;text-decoration:underline;padding:0;}
 </style>
 </head>
 <body>
+<button class="theme-toggle no-print" id="themeToggle" title="Ganti tema">🌙</button>
 <div id="lockScreen">
-  <div class="lock-box">
+  <div class="lock-box" id="loginBox">
     <div class="lock-icon">🔒</div>
     <h2>Kendali Pengeluaran</h2>
     <p>Masuk untuk membuka aplikasi</p>
@@ -211,6 +259,16 @@
     <input type="password" id="lockInput" placeholder="Password" autocomplete="current-password" style="text-align:left;letter-spacing:normal;font-family:'Inter',sans-serif;">
     <button class="btn btn-primary" id="lockSubmit">Masuk</button>
     <div class="lock-error" id="lockError"></div>
+    <button type="button" class="lock-forgot" id="lockForgotBtn">Lupa password?</button>
+  </div>
+  <div class="lock-box" id="resetBox" style="display:none;">
+    <div class="lock-icon">🔑</div>
+    <h2>Atur Password Baru</h2>
+    <p>Masukkan password baru untuk akun kamu</p>
+    <input type="password" id="resetPass1" placeholder="Password baru" autocomplete="new-password" style="text-align:left;letter-spacing:normal;font-family:'Inter',sans-serif;">
+    <input type="password" id="resetPass2" placeholder="Ulangi password baru" autocomplete="new-password" style="text-align:left;letter-spacing:normal;font-family:'Inter',sans-serif;">
+    <button class="btn btn-primary" id="resetSubmit">Simpan Password</button>
+    <div class="lock-error" id="resetError"></div>
   </div>
 </div>
 <div class="wrap">
@@ -704,6 +762,12 @@
 
     if(buckets.length === 0){ emptyEl.style.display = 'block'; return; }
 
+    const cs = getComputedStyle(document.documentElement);
+    const cLine = cs.getPropertyValue('--line').trim() || '#DCD2B4';
+    const cInk = cs.getPropertyValue('--ink').trim() || '#1C2B22';
+    const cEmerald = cs.getPropertyValue('--emerald').trim() || '#145A38';
+    const cRose = cs.getPropertyValue('--rose').trim() || '#9A3B2E';
+
     const max = Math.max(...buckets.map(b => b.value), 1);
     const padL = 10, padR = 10, padTop = 14, padBottom = 26;
     const chartW = cssWidth - padL - padR;
@@ -711,7 +775,7 @@
     const gap = 14;
     const barW = (chartW - gap*(buckets.length-1)) / buckets.length;
 
-    ctx.strokeStyle = '#DCD2B4';
+    ctx.strokeStyle = cLine;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(padL, padTop + chartH);
@@ -723,7 +787,7 @@
       const x = padL + i*(barW+gap);
       const y = padTop + chartH - h;
       const isLast = i === buckets.length - 1;
-      ctx.fillStyle = isLast ? '#9A3B2E' : '#145A38';
+      ctx.fillStyle = isLast ? cRose : cEmerald;
       const r = 5;
       ctx.beginPath();
       ctx.moveTo(x, y+h);
@@ -735,13 +799,15 @@
       ctx.closePath();
       ctx.fill();
 
-      ctx.fillStyle = '#5C6B5F';
+      ctx.fillStyle = cInk;
+      ctx.globalAlpha = 0.65;
       ctx.font = '11px Inter, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(b.label, x + barW/2, padTop + chartH + 16);
+      ctx.globalAlpha = 1;
 
       if(b.value > 0){
-        ctx.fillStyle = '#1C2B22';
+        ctx.fillStyle = cInk;
         ctx.font = '10px "JetBrains Mono", monospace';
         const label = b.value >= 1000000 ? (b.value/1000000).toFixed(1)+'jt' : (b.value/1000).toFixed(0)+'rb';
         ctx.fillText(label, x + barW/2, y - 6);
@@ -808,6 +874,7 @@
         `;
         tbody.appendChild(tr);
       });
+      tbody.prepend(...[...tbody.children].reverse());
     }
 
     const kategoriSet = [...new Set(transaksi.map(t => t.kategori).filter(Boolean))];
@@ -971,6 +1038,22 @@
     XLSX.writeFile(wb, namaFile);
   });
 
+  // ===== Tema gelap =====
+  const themeBtn = document.getElementById('themeToggle');
+  function terapkanIkonTema(){
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    themeBtn.textContent = dark ? '☀️' : '🌙';
+  }
+  themeBtn.addEventListener('click', () => {
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    if(dark){ document.documentElement.removeAttribute('data-theme'); }
+    else{ document.documentElement.setAttribute('data-theme','dark'); }
+    try{ localStorage.setItem('app-theme', dark ? 'light' : 'dark'); }catch(e){}
+    terapkanIkonTema();
+    renderTrend();
+  });
+  terapkanIkonTema();
+
   // ===== Gerbang login (Supabase Auth) =====
   function bukaAplikasi(){
     document.getElementById('lockScreen').classList.add('hidden');
@@ -978,13 +1061,24 @@
     document.body.classList.remove('locked');
     loadAll();
   }
+  function tampilkanLogin(){
+    document.getElementById('loginBox').style.display = 'block';
+    document.getElementById('resetBox').style.display = 'none';
+    document.body.classList.add('locked');
+    document.getElementById('lockEmail').focus();
+  }
+  function tampilkanFormReset(){
+    document.getElementById('loginBox').style.display = 'none';
+    document.getElementById('resetBox').style.display = 'block';
+    document.body.classList.add('locked');
+  }
 
   async function cekLogin(){
     const email = document.getElementById('lockEmail').value.trim();
     const password = document.getElementById('lockInput').value;
     const btn = document.getElementById('lockSubmit');
     const errEl = document.getElementById('lockError');
-    errEl.textContent = '';
+    errEl.textContent = ''; errEl.classList.remove('ok');
     if(!email || !password){ errEl.textContent = 'Email dan password wajib diisi.'; return; }
 
     btn.disabled = true; btn.textContent = 'Memeriksa...';
@@ -994,8 +1088,6 @@
     if(error){
       errEl.textContent = 'Email atau password salah.';
       document.getElementById('lockInput').value = '';
-    } else {
-      bukaAplikasi();
     }
   }
 
@@ -1004,16 +1096,49 @@
     document.getElementById(id).addEventListener('keydown', (e) => { if(e.key === 'Enter') cekLogin(); });
   });
 
-  (async () => {
-    const { data } = await sb.auth.getSession();
-    if(data && data.session){
-      bukaAplikasi();
-    } else {
-      document.body.classList.add('locked');
-      document.getElementById('lockEmail').focus();
+  document.getElementById('lockForgotBtn').addEventListener('click', async () => {
+    const email = document.getElementById('lockEmail').value.trim();
+    const errEl = document.getElementById('lockError');
+    errEl.classList.remove('ok');
+    if(!email){ errEl.textContent = 'Isi dulu email di atas, lalu klik lupa password.'; return; }
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.href.split('#')[0] });
+    if(error){ errEl.textContent = 'Gagal mengirim link reset.'; }
+    else {
+      errEl.textContent = 'Jika email terdaftar, link reset password sudah dikirim. Cek folder spam juga.';
+      errEl.classList.add('ok');
     }
-  })();
+  });
+
+  document.getElementById('resetSubmit').addEventListener('click', async () => {
+    const p1 = document.getElementById('resetPass1').value;
+    const p2 = document.getElementById('resetPass2').value;
+    const errEl = document.getElementById('resetError');
+    errEl.classList.remove('ok');
+    if(!p1 || p1.length < 6){ errEl.textContent = 'Password minimal 6 karakter.'; return; }
+    if(p1 !== p2){ errEl.textContent = 'Konfirmasi password tidak sama.'; return; }
+
+    const { error } = await sb.auth.updateUser({ password: p1 });
+    if(error){ errEl.textContent = 'Gagal menyimpan password baru.'; return; }
+    bukaAplikasi();
+  });
+
+  sb.auth.onAuthStateChange((event, session) => {
+    if(event === 'PASSWORD_RECOVERY'){
+      tampilkanFormReset();
+    } else if(event === 'INITIAL_SESSION'){
+      if(session) bukaAplikasi(); else tampilkanLogin();
+    } else if(event === 'SIGNED_OUT'){
+      tampilkanLogin();
+    }
+  });
 })();
+</script>
+<script>
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+    });
+  }
 </script>
 </body>
 </html>
